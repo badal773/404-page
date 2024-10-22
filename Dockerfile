@@ -1,25 +1,29 @@
-# Stage 1: Build stage to get Nginx static binary
-FROM nginx:alpine as build
+# Stage 1: Build stage
+FROM alpine:latest as builder
 
-# Copy nginx binary
-RUN cp /usr/sbin/nginx /nginx
+# Install nginx
+RUN apk add --no-cache nginx
 
-# Copy the default configuration (or your own)
-RUN cp -R /etc/nginx /nginx-config
+# Create necessary directories
+RUN mkdir -p /tmp/nginx/client-body && \
+    mkdir -p /var/log/nginx && \
+    mkdir -p /var/cache/nginx && \
+    mkdir -p /usr/share/nginx/html
 
-# Copy HTML page
-COPY index.html /html/
+# Copy static website content
+COPY index.html /usr/share/nginx/html/
 
-# Stage 2: Final minimal image
+# Stage 2: Create minimal runtime image
 FROM scratch
 
-# Copy Nginx binary and config from the build stage
-COPY --from=build /nginx /nginx
-COPY --from=build /nginx-config /etc/nginx
-COPY --from=build /html/ /usr/share/nginx/html/
+# Copy the entire root filesystem from builder
+COPY --from=builder / /
+
+# Set working directory
+WORKDIR /usr/share/nginx/html
 
 # Expose port 80
 EXPOSE 80
 
-# Start the Nginx web server
-ENTRYPOINT ["/nginx", "-g", "daemon off;"]
+# Start Nginx
+CMD ["/usr/sbin/nginx", "-g", "daemon off;"]
