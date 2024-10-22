@@ -1,14 +1,25 @@
-# Step 1: Use a small Nginx image as the base image
-FROM nginx:alpine
+# Stage 1: Build stage to get Nginx static binary
+FROM nginx:alpine as build
 
-# Step 2: Remove default Nginx website
-RUN rm -rf /usr/share/nginx/html/*
+# Copy nginx binary
+RUN cp /usr/sbin/nginx /nginx
 
-# Step 3: Copy your HTML file into the container
-COPY index.html /usr/share/nginx/html/
+# Copy the default configuration (or your own)
+RUN cp -R /etc/nginx /nginx-config
 
-# Step 4: Expose port 80 for the web server
+# Copy HTML page
+COPY index.html /html/
+
+# Stage 2: Final minimal image
+FROM scratch
+
+# Copy Nginx binary and config from the build stage
+COPY --from=build /nginx /nginx
+COPY --from=build /nginx-config /etc/nginx
+COPY --from=build /html/ /usr/share/nginx/html/
+
+# Expose port 80
 EXPOSE 80
 
-# Step 5: Start Nginx server
-CMD ["nginx", "-g", "daemon off;"]
+# Start the Nginx web server
+ENTRYPOINT ["/nginx", "-g", "daemon off;"]
