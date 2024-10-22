@@ -1,28 +1,49 @@
-# Stage 1: Build stage to get Nginx static binary
-FROM nginx:alpine as build
+FROM alpine:3.20.2 AS builder
+ARG BUSYBOX_VERSION=1.36.1
 
-# Copy the Nginx binary from the container
-RUN cp /usr/sbin/nginx /nginx
+# Install all dependencies required for compiling busybox
+RUN apk add gcc musl-dev make perl
 
-# Copy the default configuration (or your own)
-RUN cp -R /etc/nginx /nginx-config
+# Download busybox sources
+RUN wget https://busybox.net/downloads/busybox-${BUSYBOX_VERSION}.tar.bz2 \
+  && tar xf busybox-${BUSYBOX_VERSION}.tar.bz2 \
+  && mv /busybox-${BUSYBOX_VERSION} /busybox
 
-# Copy HTML page to the default location for Nginx
-COPY index.html /usr/share/nginx/html/
+WORKDIR /busybox
 
-# Stage 2: Final minimal image
-FROM alpine:latest
+# Copy the busybox build config (limited to httpd)
+COPY .config .
 
-# Install necessary packages for running Nginx (if needed)
-RUN apk --no-cache add nginx
+# Compile and install busybox
+RUN make && make install
 
-# Copy Nginx binary and config from the build stage
-COPY --from=build /nginx /nginx
-COPY --from=build /nginx-config /etc/nginx/
-COPY --from=build /usr/share/nginx/html /usr/share/nginx/html/
+# Create a non-root user to own the files and run our server
+RUN adduser -D static
 
-# Expose port 80
-EXPOSE 80
+# Switch to the scratch image
+FROM scratch
 
-# Start the Nginx web server
-ENTRYPOINT ["/nginx", "-g", "daemon off;"]
+EXPOSE 3555
+
+# Copy over the user
+COPY --from=builder /etc/passwd /etc/passwd
+
+# Copy the busybox static binary
+COPY --from=builder /busybox/_install/bin/busybox /
+
+# Use our non-root user
+USER static
+WORKDIR /home/static
+
+# Uploads a blank default httpd.conf
+# This is only needed in order to set the `-c` argument in this base file
+# and save the developer the need to override the CMD line in case they ever
+# want to use a httpd.conf
+COPY httpd.conf .
+
+# Copy the static website
+# Use the .dockerignore file to control what ends up inside the image!
+COPY . .
+
+# Run busybox httpd
+CMD ["/busybox", "httpd", "-f", "-v", "-p", "3555", "-c", "httpd.conf"]
